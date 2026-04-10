@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write # 必须，用于创建 Release 和 Tag
+  contents: write
 
 env:
   APP_NAME: bulk_rename
@@ -15,25 +15,15 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
-      exists: ${{ steps.tag_check.outputs.exists }}
     steps:
-      - uses: actions/checkout@v5 # 升级到 v5
+      - uses: actions/checkout@v4
       - id: get_version
         run: |
           VERSION=$(grep '^version' Cargo.toml | head -n1 | cut -d '"' -f2)
           echo "version=v$VERSION" >> $GITHUB_OUTPUT
-      - id: tag_check
-        run: |
-          git fetch --tags
-          if git rev-parse "refs/tags/${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
 
   build:
     needs: check-version
-    if: needs.check-version.outputs.exists == 'false'
     strategy:
       matrix:
         include:
@@ -45,16 +35,13 @@ jobs:
             artifact: windows
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
-      
-      # 使用现代化的 Rust 缓存方案
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
       
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Prepare Artifacts
+      - name: Package
         shell: bash
         run: |
           mkdir dist
@@ -85,8 +72,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # 通过 API 创建 Release，只要 Bypass List 配置正确，即可自动生成 Tag
           tag_name: ${{ needs.check-version.outputs.version }}
           name: Release ${{ needs.check-version.outputs.version }}
           files: assets/*
           generate_release_notes: true
+          make_latest: true
