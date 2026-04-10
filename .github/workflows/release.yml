@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write # 必须：允许 Action 创建 Release 和 Tag
+  contents: write # 明确声明需要写权限
 
 env:
   APP_NAME: bulk_rename
@@ -17,15 +17,16 @@ jobs:
       version: ${{ steps.get_version.outputs.version }}
       exists: ${{ steps.tag_check.outputs.exists }}
     steps:
-      - uses: actions/checkout@v4 # 检查代码
+      - uses: actions/checkout@v4
       - id: get_version
         run: |
-          VERSION=$(grep '^version' Cargo.toml | head -n1 | cut -d '"' -f2)
+          # 2026 年更推荐用这个方式提取版本号，避免空格干扰
+          VERSION=$(grep '^version' Cargo.toml | head -n1 | sed 's/.*"\(.*\)".*/\1/')
           echo "version=v$VERSION" >> $GITHUB_OUTPUT
       - id: tag_check
         run: |
           git fetch --tags
-          if git rev-parse "refs/tags/${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
+          if git rev-parse "refs/tags/v$(grep '^version' Cargo.toml | head -n1 | sed 's/.*"\(.*\)".*/\1/')" >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
           else
             echo "exists=false" >> $GITHUB_OUTPUT
@@ -34,30 +35,19 @@ jobs:
   build-windows:
     needs: check-version
     if: needs.check-version.outputs.exists == 'false'
-    runs-on: windows-latest # 直接在 Windows 环境运行
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
-      # 使用缓存加速 Rust 编译
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
-
       - name: Build
         run: cargo build --release
-
-      - name: Package Artifacts
+      - name: Package
         shell: pwsh
         run: |
-          # 创建发布目录
           New-Item -ItemType Directory -Force -Path dist
-          # 复制 exe 到 dist
           Copy-Item "target/release/${{ env.APP_NAME }}.exe" -Destination "dist/"
-          # 压缩整个 dist 文件夹为 zip
           Compress-Archive -Path "dist/*" -DestinationPath "${{ env.APP_NAME }}-${{ needs.check-version.outputs.version }}-windows.zip"
-          # 此时目录下会有：
-          # 1. dist/bulk_rename.exe
-          # 2. bulk_rename-v0.1.0-windows.zip
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
