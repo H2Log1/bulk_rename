@@ -1,0 +1,21 @@
+[package]
+name = "bulk_rename"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.0", features = ["derive"] }
+inquire = "0.9.4"
+regex = "1.12.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+
+[build-dependencies]
+winres = "0.1.12"
+
+[profile.release]
+opt-level = "z"      # 优化体积 (s 或 z)
+lto = true           # 开启链接时优化，进一步减小体积并提升性能
+codegen-units = 1    # 限制并行编译单元，有利于深度优化
+panic = "abort"      # 出错时直接中止，减少异常处理代码（可选）
+strip = true         # 自动从二进制文件中剥离符号表和调试信息
