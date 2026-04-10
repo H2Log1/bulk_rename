@@ -1,11 +1,11 @@
-name: Smart Auto Release
+name: Smart Auto Release (Windows Only)
 
 on:
   push:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: write # 必须：允许 Action 创建 Release 和 Tag
 
 env:
   APP_NAME: bulk_rename
@@ -15,65 +15,55 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+      exists: ${{ steps.tag_check.outputs.exists }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # 检查代码
       - id: get_version
         run: |
           VERSION=$(grep '^version' Cargo.toml | head -n1 | cut -d '"' -f2)
           echo "version=v$VERSION" >> $GITHUB_OUTPUT
-
-  build:
-    needs: check-version
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact: linux
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact: windows
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-      
-      - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Package
-        shell: bash
+      - id: tag_check
         run: |
-          mkdir dist
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            cp target/${{ matrix.target }}/release/${{ env.APP_NAME }}.exe dist/
-            cd dist && 7z a ../${{ env.APP_NAME }}-${{ matrix.artifact }}.zip *
+          git fetch --tags
+          if git rev-parse "refs/tags/${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
           else
-            cp target/${{ matrix.target }}/release/${{ env.APP_NAME }} dist/
-            cd dist && tar -czf ../${{ env.APP_NAME }}-${{ matrix.artifact }}.tar.gz *
+            echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: binary-${{ matrix.artifact }}
-          path: ${{ env.APP_NAME }}-${{ matrix.artifact }}.*
-
-  release:
-    needs: [check-version, build]
-    runs-on: ubuntu-latest
+  build-windows:
+    needs: check-version
+    if: needs.check-version.outputs.exists == 'false'
+    runs-on: windows-latest # 直接在 Windows 环境运行
     steps:
-      - name: Download Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: assets
-          merge-multiple: true
+      - uses: actions/checkout@v4
+
+      # 使用缓存加速 Rust 编译
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package Artifacts
+        shell: pwsh
+        run: |
+          # 创建发布目录
+          New-Item -ItemType Directory -Force -Path dist
+          # 复制 exe 到 dist
+          Copy-Item "target/release/${{ env.APP_NAME }}.exe" -Destination "dist/"
+          # 压缩整个 dist 文件夹为 zip
+          Compress-Archive -Path "dist/*" -DestinationPath "${{ env.APP_NAME }}-${{ needs.check-version.outputs.version }}-windows.zip"
+          # 此时目录下会有：
+          # 1. dist/bulk_rename.exe
+          # 2. bulk_rename-v0.1.0-windows.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check-version.outputs.version }}
           name: Release ${{ needs.check-version.outputs.version }}
-          files: assets/*
+          files: |
+            dist/${{ env.APP_NAME }}.exe
+            *.zip
           generate_release_notes: true
-          make_latest: true
