@@ -41,8 +41,14 @@ fn main() -> std::io::Result<()> {
     }
 
     // 2. 获取目标路径
+    let default_target_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|dir| dir.to_path_buf()))
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."));
+
     let target_dir = Text::new("请输入目标文件夹路径:")
-        .with_default("./test_files")
+        .with_default(default_target_dir.to_string_lossy().as_ref())
         .prompt()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
