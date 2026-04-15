@@ -18,6 +18,26 @@ fn main() -> std::io::Result<()> {
     println!("🚀 文件批量重命名 v1.0");
     println!("======================\n");
 
+    loop {
+        if let Err(e) = run_once() {
+            eprintln!("❌ 操作失败: {}", e);
+        }
+
+        let continue_running = Confirm::new("是否继续进行下一次操作？")
+            .with_default(true)
+            .prompt()
+            .unwrap_or(false);
+
+        if !continue_running {
+            println!("👋 程序已退出。");
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+fn run_once() -> std::io::Result<()> {
     let has_history = Path::new(HISTORY_FILE).exists();
 
     // 1. 功能选择
@@ -37,7 +57,8 @@ fn main() -> std::io::Result<()> {
 
     // 处理撤销逻辑
     if strategy == "🔙 撤销上次重命名操作" {
-        return perform_undo();
+        perform_undo()?;
+        return Ok(());
     }
 
     // 2. 获取目标路径
@@ -141,6 +162,8 @@ fn main() -> std::io::Result<()> {
         fs::write(HISTORY_FILE, json)?;
         println!("\n✅ 成功重命名 {} 个文件。", history.len());
         println!("💡 提示：如需撤销，请再次运行本程序并选择“撤销”选项。");
+    } else {
+        println!("\nℹ️ 没有需要重命名的文件。");
     }
 
     Ok(())
